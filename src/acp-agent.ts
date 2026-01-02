@@ -925,6 +925,9 @@ export class ClaudeAcpAgent implements Agent {
       if (role !== "user" && role !== "assistant") continue;
       if (content === undefined || content === null) continue;
 
+      // Extract timestamp from the record for proper event ordering during replay
+      const timestampMs = record.timestamp ? new Date(record.timestamp).getTime() : undefined;
+
       for (const notification of toAcpNotifications(
         content,
         role,
@@ -932,6 +935,7 @@ export class ClaudeAcpAgent implements Agent {
         this.toolUseCache,
         this.client,
         this.logger,
+        timestampMs,
       )) {
         await this.client.sessionUpdate(notification);
       }
@@ -1093,10 +1097,15 @@ export function toAcpNotifications(
   toolUseCache: ToolUseCache,
   client: AgentSideConnection,
   logger: Logger,
+  timestampMs?: number,
 ): SessionNotification[] {
+  // Build _meta with timestamp if provided (for session replay ordering)
+  const meta = timestampMs !== undefined ? { timestampMs } : undefined;
+
   if (typeof content === "string") {
     return [
       {
+        _meta: meta,
         sessionId,
         update: {
           sessionUpdate: role === "assistant" ? "agent_message_chunk" : "user_message_chunk",
@@ -1253,7 +1262,7 @@ export function toAcpNotifications(
         break;
     }
     if (update) {
-      output.push({ sessionId, update });
+      output.push({ _meta: meta, sessionId, update });
     }
   }
 
